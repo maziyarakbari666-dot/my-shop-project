@@ -1,23 +1,41 @@
-const Order = require('../order');
+const Order = require('../models/Order');
 
-// ثبت سفارش جدید
-exports.createOrder = async (req, res) => {
+exports.createOrder = async (req, res, next) => {
   try {
-    const { user, products, totalPrice } = req.body;
-    const order = new Order({ user, products, totalPrice });
-    await order.save();
-    res.status(201).json({ message: 'Order created successfully', order });
+    const { products, address } = req.body;
+    let totalPrice = 0;
+    products.forEach(p => totalPrice += p.price * p.quantity);
+    const order = await Order.create({
+      user: req.user.id,
+      products: products.map(p => ({ product: p.product, quantity: p.quantity })),
+      totalPrice,
+      address
+    });
+    res.success({ order });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    next(err);
   }
 };
 
-// دریافت لیست سفارش‌ها
-exports.getOrders = async (req, res) => {
+exports.getUserOrders = async (req, res, next) => {
   try {
-    const orders = await Order.find().populate('user').populate('products.product');
-    res.json(orders);
+    const orders = await Order.find({ user: req.user.id }).populate('products.product');
+    res.success({ orders });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
+  }
+};
+
+exports.payOrder = async (req, res, next) => {
+  try {
+    const { orderId } = req.body;
+    const order = await Order.findById(orderId);
+    if (!order) return res.fail('سفارش پیدا نشد.', 404);
+    order.status = 'paid';
+    order.paidAt = new Date();
+    await order.save();
+    res.success({ order });
+  } catch (err) {
+    next(err);
   }
 };
