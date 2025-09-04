@@ -1,13 +1,26 @@
-const Product = require('../models/product');
+const Product = require('../models/Product');
 
-// افزودن محصول جدید
-exports.addProduct = async (req, res) => {
+exports.addProduct = async (req, res, next) => {
   try {
-    const { name, price, description, stock } = req.body;
-    const product = new Product({ name, price, description, stock });
-    await product.save();
-    res.status(201).json({ message: 'Product created successfully', product });
+    const { name, price, category, description, stock } = req.body;
+    const image = req.file ? req.file.path : undefined;
+    const product = await Product.create({ name, price, category, description, stock, image });
+    res.success({ product });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    next(err);
   }
+<<<<<<< HEAD
+=======
+};
+
+exports.searchProducts = async (req, res, next) => {
+  try {
+    const { q } = req.query;
+    const filter = q ? { name: new RegExp(q, 'i') } : {};
+    const products = await Product.find(filter).populate('category');
+    res.success({ products });
+  } catch (err) {
+    next(err);
+  }
+>>>>>>> 52aec5e0824b0bbdf41a9c6b5055947101311081
 };
