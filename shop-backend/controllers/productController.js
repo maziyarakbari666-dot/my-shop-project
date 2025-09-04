@@ -1,34 +1,23 @@
-const Product = require('../models/product');
+const Product = require('../models/Product');
 
-// افزودن محصول جدید
-exports.addProduct = async (req, res) => {
+exports.addProduct = async (req, res, next) => {
   try {
-    const { name, price, description, stock } = req.body;
-    const product = new Product({ name, price, description, stock });
-    await product.save();
-    res.status(201).json({ message: 'Product created successfully', product });
+    const { name, price, category, description, stock } = req.body;
+    const image = req.file ? req.file.path : undefined;
+    const product = await Product.create({ name, price, category, description, stock, image });
+    res.success({ product });
   } catch (err) {
-    res.status(400).json({ error: err.message });
+    next(err);
   }
 };
 
-// دریافت لیست محصولات
-exports.getProducts = async (req, res) => {
+exports.searchProducts = async (req, res, next) => {
   try {
-    const products = await Product.find();
-    res.json(products);
+    const { q } = req.query;
+    const filter = q ? { name: new RegExp(q, 'i') } : {};
+    const products = await Product.find(filter).populate('category');
+    res.success({ products });
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// دریافت یک محصول با آیدی
-exports.getProductById = async (req, res) => {
-  try {
-    const product = await Product.findById(req.params.id);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
-    res.json(product);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+    next(err);
   }
 };
