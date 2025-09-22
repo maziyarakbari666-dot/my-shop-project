@@ -1,10 +1,10 @@
 'use client';
 
-import React from "react";
+import React, { useEffect, useState, useRef } from "react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useCart } from "../../context/CartContext";
 
-// داده دمو محصولات با عکس آنلاین
 const products = [
   {
     id: "1",
@@ -35,21 +35,48 @@ const products = [
   // ... سایر محصولات
 ];
 
-// دمو نظرات
-const comments = {
-  "1": [
-    { user: "سمیرا", text: "خیلی تازه و خوشمزه بود!", date: "1402/05/11" },
-    { user: "مهدی", text: "برای صبحونه عالیه.", date: "1402/05/09" }
-  ],
-  "2": [
-    { user: "فرزانه", text: "طعمش بی‌نظیر بود.", date: "1402/05/12" }
-  ]
-};
+const BASE_API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+function normalizeProduct(p) {
+  if (!p) return p;
+  const images = Array.isArray(p.images) && p.images.length > 0
+    ? p.images
+    : (p.image ? [p.image] : []);
+  const categoryName = typeof p.category === 'string' ? p.category : (p.category?.name || "");
+  const id = p._id || p.id;
+  const price = Number(p.price) || 0;
+  const stock = typeof p.stock === 'number' ? p.stock : (p.stock ? Number(p.stock) : 0);
+  const bnpl = p.bnpl || (price > 0 ? { enabled: true, installmentCount: 4, installmentAmount: Math.ceil(price / 4) } : { enabled: false });
+  return { ...p, id, _id: id, images, image: images[0], category: categoryName, price, stock, bnpl };
+}
 
 export default function ProductPage() {
   const params = useParams();
   const { addToCart } = useCart();
-  const product = products.find(p => p.id === params.id);
+  const [product, setProduct] = useState(() => {
+    const demo = products.find(p => p.id === params.id);
+    return demo ? normalizeProduct(demo) : null;
+  });
+  const [reviews, setReviews] = useState([]);
+  const [reviewText, setReviewText] = useState("");
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const touchDeltaX = useRef(0);
+  const touchDeltaY = useRef(0);
+  const touchActive = useRef(false);
+  const [dragX, setDragX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+
+  useEffect(() => {
+    // fetch from backend if available
+    fetch(`${BASE_API}/api/products/${params.id}`).then(r => r.json()).then(d => {
+      if (d?.product) setProduct(normalizeProduct(d.product));
+    }).catch(()=>{});
+    fetch(`${BASE_API}/api/products/comments?productId=${params.id}`).then(r=>r.json()).then(d=>{
+      if (d?.reviews) setReviews(d.reviews);
+    }).catch(()=>{});
+  }, [params.id]);
 
   if (!product) {
     return (
@@ -64,168 +91,275 @@ export default function ProductPage() {
 
   return (
     <div className="prod-root">
-      {/* تصاویر محصول */}
-      <div className="prod-img-list">
-        {product.images.map((img, idx) => (
-          <img key={idx} src={img} alt={product.name}
-            className="prod-img"
-          />
-        ))}
-      </div>
-      {/* جزئیات محصول */}
-      <h2 className="prod-title">{product.name}</h2>
-      <div className="prod-cat">دسته‌بندی: {product.category}</div>
-      <div className="prod-desc">{product.description}</div>
-      <div className="prod-price-row">
-        <span className="prod-price">{product.price.toLocaleString()} تومان</span>
-        <span className={`prod-stock ${product.stock > 0 ? 'in-stock' : 'out-stock'}`}>
-          {product.stock > 0 ? `موجود (${product.stock} عدد)` : "ناموجود"}
-        </span>
-      </div>
-      {/* ابزارک BNPL */}
-      {product.bnpl?.enabled && (
-        <div className="prod-bnpl">
-          خرید اعتباری: این محصول را با پرداخت
-          {" "}
-          {product.bnpl.installmentCount}
-          {" "}
-          قسط {product.bnpl.installmentAmount.toLocaleString()} تومان تهیه کنید!
+      <div className="prod-card">
+        <div className="prod-container">
+          {/* گالری تصاویر */}
+          <div className="prod-gallery">
+            {(() => {
+              const imageList = (product.images && product.images.length ? product.images : (product.image ? [product.image] : []));
+              const validIndex = Math.min(Math.max(currentImageIndex, 0), Math.max(imageList.length - 1, 0));
+              const showPrev = () => setCurrentImageIndex((prev) => (prev - 1 + imageList.length) % imageList.length);
+              const showNext = () => setCurrentImageIndex((prev) => (prev + 1) % imageList.length);
+              const selectIndex = (idx) => setCurrentImageIndex(idx);
+              return (
+                <>
+                  <div
+                    className="prod-main-image"
+                    onTouchStart={(e)=>{
+                      const t = e.touches && e.touches[0];
+                      if (!t) return;
+                      touchActive.current = true;
+                      setIsDragging(true);
+                      touchStartX.current = t.clientX;
+                      touchStartY.current = t.clientY;
+                      touchDeltaX.current = 0;
+                      touchDeltaY.current = 0;
+                      setDragX(0);
+                    }}
+                    onTouchMove={(e)=>{
+                      if (!touchActive.current) return;
+                      const t = e.touches && e.touches[0];
+                      if (!t) return;
+                      touchDeltaX.current = t.clientX - touchStartX.current;
+                      touchDeltaY.current = t.clientY - touchStartY.current;
+                      if (Math.abs(touchDeltaX.current) > Math.abs(touchDeltaY.current)) {
+                        setDragX(touchDeltaX.current * 0.9);
+                      }
+                    }}
+                    onTouchEnd={()=>{
+                      if (!touchActive.current) return;
+                      const dx = touchDeltaX.current;
+                      const dy = touchDeltaY.current;
+                      const threshold = 40;
+                      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > threshold) {
+                        if (dx < 0) {
+                          // swipe left -> next
+                          (typeof showNext === 'function') && showNext();
+                        } else {
+                          // swipe right -> prev
+                          (typeof showPrev === 'function') && showPrev();
+                        }
+                      }
+                      setIsDragging(false);
+                      setDragX(0);
+                      touchActive.current = false;
+                    }}
+                  >
+                    {imageList.length > 0 && (
+                      <Image
+                        src={imageList[validIndex]}
+                        alt={`${product.name} - تصویر ${validIndex + 1}`}
+                        width={600}
+                        height={600}
+                        className="prod-main-img"
+                        priority
+                        quality={90}
+                        sizes="(max-width: 900px) 90vw, 45vw"
+                        style={{ transform: `translateX(${dragX}px)`, transition: isDragging ? 'none' : 'transform .25s ease-out, opacity .25s ease-out', willChange: 'transform' }}
+                      />
+                    )}
+                    {imageList.length > 1 && (
+                      <>
+                        <button type="button" className="nav-btn prev" aria-label="قبلی" onClick={showPrev}>❮</button>
+                        <button type="button" className="nav-btn next" aria-label="بعدی" onClick={showNext}>❯</button>
+                      </>
+                    )}
+                  </div>
+                  {imageList.length > 1 && (
+                    <div className="prod-thumbs" role="tablist" aria-label="تصاویر کوچک محصول">
+                      {imageList.map((img, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          className={`thumb ${idx === validIndex ? 'active' : ''}`}
+                          onClick={() => selectIndex(idx)}
+                          role="tab"
+                          aria-selected={idx === validIndex}
+                        >
+                          <Image src={img} alt={`${product.name} thumbnail ${idx + 1}`} width={72} height={72} className="thumb-img" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </div>
+
+          {/* جزئیات محصول */}
+          <div className="prod-details">
+            <h1 className="prod-title">{product.name}</h1>
+            <div className="prod-cat">دسته‌بندی: {typeof product.category === 'string' ? product.category : (product.category?.name || '')}</div>
+            <div className="prod-price-row">
+              <span className="prod-price">{(Number(product.price)||0).toLocaleString()} تومان</span>
+              <span className={`prod-stock ${(Number(product.stock)||0) > 0 ? 'in-stock' : 'out-stock'}`}>
+                {(Number(product.stock)||0) > 0 ? "موجود" : "ناموجود"}
+              </span>
+            </div>
+            {false && product.bnpl?.enabled && (
+              <div className="prod-bnpl">
+                خرید اعتباری: {product.bnpl.installmentCount} قسط {Number(product.bnpl.installmentAmount||0).toLocaleString()} تومان
+              </div>
+            )}
+            <div className="prod-actions">
+              <button
+                className="prod-btn"
+                disabled={(Number(product.stock)||0) === 0}
+                onClick={() => addToCart({ id: product._id || product.id, name: product.name, category: (typeof product.category === 'string' ? product.category : (product.category?.name || '')), price: Number(product.price)||0, images: product.images && product.images.length ? product.images : (product.image ? [product.image] : []), quantity: 1 })}
+              >
+                افزودن به سبد خرید
+              </button>
+              {/* دکمه خرید سریع حذف شد */}
+              <a href="#comments" className="prod-link-comments">مشاهده نظرات</a>
+            </div>
+            <div className="prod-desc">{product.description}</div>
+          </div>
         </div>
-      )}
-      {/* افزودن به سبد خرید */}
-      <button
-        className="prod-btn"
-        disabled={product.stock === 0}
-        onClick={() => addToCart(product)}
-      >
-        افزودن به سبد خرید
-      </button>
-      {/* نظرات کاربران */}
-      <div className="prod-comments">
+      </div>
+
+      {/* سکشن نظرات در انتهای صفحه */}
+      <div id="comments" className="prod-comments">
         <h3 className="prod-comments-title">نظرات کاربران</h3>
-        {(comments[product.id]?.length > 0) ? (
-          comments[product.id].map((c, i) => (
+        {reviews.length > 0 ? (
+          reviews.map((c, i) => (
             <div key={i} className="prod-comment">
               <div className="prod-comment-user">{c.user}</div>
               <div className="prod-comment-text">{c.text}</div>
-              <div className="prod-comment-date">{c.date}</div>
+              <div className="prod-comment-date">{new Date(c.createdAt || Date.now()).toLocaleDateString('fa-IR')}</div>
             </div>
           ))
         ) : (
           <div className="prod-comment-empty">هنوز نظری ثبت نشده است.</div>
         )}
+
+        <form onSubmit={async (e)=>{
+          e.preventDefault();
+          const user = typeof window !== 'undefined' ? (localStorage.getItem('user_phone')||'کاربر') : 'کاربر';
+          const res = await fetch(`${BASE_API}/api/products/comments`, { method:'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ productId: product._id || params.id, user, text: reviewText }) });
+          const data = await res.json();
+          if (res.ok) {
+            setReviewText('');
+            alert('نظر شما ارسال شد و پس از تایید نمایش می‌یابد.');
+          }
+        }} style={{marginTop:12}}>
+          <textarea value={reviewText} onChange={e=>setReviewText(e.target.value)} placeholder="نظر شما" style={{width:'100%', minHeight:60, padding:8}} />
+          <button className="prod-btn" type="submit">ثبت نظر</button>
+        </form>
       </div>
+
       <style>{`
         .prod-root {
           font-family: Vazirmatn,sans-serif;
-          max-width: 780px;
+          max-width: 1100px;
           margin: 32px auto;
+          padding: 0 12px;
+        }
+        .prod-card {
           background: #fff;
           border-radius: 18px;
           box-shadow: 0 2px 18px #eee;
-          padding: 28px 16px;
+          padding: 24px 16px;
         }
-        .prod-img-list {
-          display: flex;
-          gap: 14px;
-          justify-content: center;
-          margin-bottom: 18px;
-          flex-wrap: wrap;
+        .prod-container {
+          display: grid;
+          grid-template-columns: 1.1fr 0.9fr;
+          gap: 24px;
+          align-items: start;
         }
-        .prod-img {
-          width: 140px;
-          height: 140px;
-          object-fit: cover;
-          border-radius: 16px;
-          border: 1px solid #ececec;
-          box-shadow: 0 2px 8px #eee;
-          background: #fafafa;
-        }
+        .prod-gallery { display: flex; flex-direction: column; gap: 10px; }
+        .prod-main-image { position: relative; background: #fafafa; border: 1px solid #ececec; border-radius: 14px; overflow: hidden; }
+        .prod-main-img { width: 100%; height: auto; display: block; object-fit: cover; }
+        .nav-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,.45); color: #fff; border: none; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .nav-btn.prev { right: 8px; }
+        .nav-btn.next { left: 8px; }
+        .prod-thumbs { display: flex; gap: 8px; overflow-x: auto; padding: 4px 2px; }
+        .thumb { border: 2px solid transparent; border-radius: 10px; padding: 2px; background: #fff; cursor: pointer; }
+        .thumb.active { border-color: var(--primary); }
+        .thumb-img { border-radius: 8px; display: block; }
+        .prod-details {}
         .prod-title {
-          font-weight: bold;
-          font-size: 26px;
-          color: #27ae60;
+          font-weight: 900;
+          font-size: 28px;
+          color: var(--primary);
           margin-bottom: 6px;
-          text-align: center;
         }
-        .prod-cat {
-          color: #888; font-size: 16px; margin-bottom: 8px; text-align: center;
-        }
-        .prod-desc { font-size: 17px; margin-bottom: 14px; text-align: center;}
+        .prod-cat { color: #777; font-size: 15px; margin-bottom: 10px; }
+        .prod-desc { font-size: 16px; color: #444; margin-top: 14px; line-height: 1.9; }
         .prod-price-row {
           display: flex;
           align-items: center;
-          gap: 18px;
-          margin-bottom: 18px;
-          justify-content: center;
+          gap: 14px;
+          margin: 14px 0 16px 0;
+          flex-wrap: wrap;
         }
         .prod-price {
-          font-weight: bold;
+          font-weight: 800;
           font-size: 22px;
-          color: #e67e22;
+          color: var(--accent);
         }
-        .prod-stock.in-stock { font-size: 15px; color: #27ae60; font-weight: bold;}
-        .prod-stock.out-stock { font-size: 15px; color: #c0392b; font-weight: bold;}
+        .prod-stock.in-stock { font-size: 14px; color: var(--primary); font-weight: 700; }
+        .prod-stock.out-stock { font-size: 14px; color: #c0392b; font-weight: 700; }
         .prod-bnpl {
-          background: #f9f6e7;
-          border-radius: 9px;
-          padding: 12px 16px;
-          margin-bottom: 20px;
-          color: #c0392b;
-          font-weight: bold;
-          font-size: 17px;
+          background: linear-gradient(90deg, var(--brand-orange-1,#FBAD1B) 10%, var(--accent,#F26826) 100%);
+          color: #fff;
+          border-radius: 10px;
+          padding: 10px 14px;
+          margin: 6px 0 14px 0;
+          font-weight: 800;
           text-align: center;
         }
+        .prod-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
         .prod-btn {
-          padding: 11px 38px;
-          background: linear-gradient(90deg,#27ae60 70%,#43e97b 100%);
+          padding: 11px 24px;
+          background: var(--primary);
           color: #fff;
           border: none;
-          border-radius: 11px;
-          font-size: 18px;
-          font-weight: bold;
+          border-radius: 10px;
+          font-size: 16px;
+          font-weight: 800;
           cursor: pointer;
           box-shadow: 0 2px 8px #eee;
-          margin-bottom: 22px;
-          transition: background .2s;
-          display: block;
-          margin-left: auto;
-          margin-right: auto;
+          transition: filter .15s ease;
         }
-        .prod-btn:disabled {
-          background: #ccc;
-          cursor: not-allowed;
-        }
+        .prod-btn:hover { filter: brightness(1.05); }
+        .prod-btn:disabled { background: #ccc; cursor: not-allowed; }
+        /* .buy-now-btn حذف شد */
+        .prod-link-comments { color: var(--primary); font-weight: 800; text-decoration: none; }
+        .prod-link-comments:hover { text-decoration: underline; }
+
+        /* نظرات */
         .prod-comments {
           margin-top: 18px;
-          border-top: 1px solid #f3f3f3;
-          padding-top: 14px;
+          background: #fff;
+          border-radius: 18px;
+          box-shadow: 0 2px 18px #eee;
+          padding: 22px 16px;
         }
         .prod-comments-title {
-          font-weight: bold;
-          font-size: 19px;
-          margin-bottom: 10px;
-          color: #27ae60;
+          font-weight: 900;
+          font-size: 20px;
+          margin-bottom: 12px;
+          color: var(--primary);
           text-align: center;
         }
         .prod-comment {
-          background: #fafafa;
-          border-radius: 8px;
-          padding: 12px 16px;
+          background: #f8fafc;
+          border-radius: 10px;
+          padding: 12px 14px;
           margin-bottom: 10px;
-          box-shadow: 0 1px 6px #eee;
+          box-shadow: 0 1px 6px #f1f1f1;
         }
-        .prod-comment-user {
-          font-weight: bold; color: #222;
-          margin-bottom: 4px;
+        .prod-comment-user { font-weight: 800; color: #222; margin-bottom: 4px; }
+        .prod-comment-text { font-size: 15px; margin-top: 2px; }
+        .prod-comment-date { font-size: 12px; color: #888; margin-top: 2px; }
+        .prod-comment-empty { color: #888; font-size: 16px; text-align: center; }
+
+        @media (max-width: 900px) {
+          .prod-container { grid-template-columns: 1fr; }
         }
-        .prod-comment-text { font-size: 15px; margin-top: 2px;}
-        .prod-comment-date { font-size: 13px; color: #888; margin-top: 2px;}
-        .prod-comment-empty { color: #888; font-size: 16px; text-align: center;}
         @media (max-width: 600px) {
-          .prod-root { padding: 8px 2px;}
-          .prod-title { font-size: 19px;}
-          .prod-img { width: 100px; height: 100px;}
+          .prod-root { padding: 0 6px; }
+          .prod-title { font-size: 20px; }
         }
       `}</style>
     </div>

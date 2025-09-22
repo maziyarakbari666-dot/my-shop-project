@@ -2,9 +2,22 @@
 
 import React, { useState } from "react";
 import toast from "react-hot-toast";
+import { useEffect } from "react";
 
 export default function ContactPage() {
+  const BASE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
   const [form, setForm] = useState({ name: "", phone: "", message: "" });
+  const [info, setInfo] = useState({ phone: '', address: '', instagram: '', email: '' });
+
+  useEffect(()=>{
+    (async()=>{
+      try{
+        const r = await fetch(`${BASE_API}/api/settings`, { cache: 'no-store' });
+        const d = await r.json();
+        if (r.ok && d?.settings?.contact) setInfo(d.settings.contact);
+      }catch(_){ }
+    })();
+  },[]);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -23,9 +36,10 @@ export default function ContactPage() {
     <div className="contact-root">
       <h2 className="contact-title">تماس با ما</h2>
       <div className="contact-info">
-        <div><b>📞 تلفن:</b> 021-12345678</div>
-        <div><b>📍 آدرس:</b> تهران، خیابان آزادی، پلاک 18</div>
-        <div><b>🌐 اینستاگرام:</b> <a href="https://instagram.com/example" target="_blank" rel="noopener noreferrer">@example</a></div>
+        {info.phone && <div><b>📞 تلفن:</b> {info.phone}</div>}
+        {info.address && <div><b>📍 آدرس:</b> {info.address}</div>}
+        {info.instagram && <div><b>🌐 اینستاگرام:</b> <a href={/^https?:/i.test(info.instagram)? info.instagram : `https://instagram.com/${info.instagram.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer">{info.instagram}</a></div>}
+        {info.email && <div><b>✉️ ایمیل:</b> <a href={`mailto:${info.email}`}>{info.email}</a></div>}
       </div>
       <form className="contact-form" onSubmit={handleSubmit}>
         <input
@@ -65,7 +79,7 @@ export default function ContactPage() {
         }
         .contact-title {
           font-size: 1.25rem;
-          color: #27ae60;
+          color: var(--accent);
           font-weight: bold;
           margin-bottom: 15px;
           text-align: center;
@@ -90,11 +104,11 @@ export default function ContactPage() {
           transition: border-color .2s;
         }
         .contact-input:focus {
-          border-color: #27ae60;
-          background: #eafaf1;
+          border-color: var(--accent);
+          background: #fff4e6;
         }
         .contact-btn {
-          background: #27ae60;
+          background: var(--accent);
           color: #fff;
           border: none;
           border-radius: 8px;
@@ -104,7 +118,7 @@ export default function ContactPage() {
           cursor: pointer;
         }
         .contact-btn:hover {
-          background: #219150;
+          background: #ff8c1a;
         }
         @media (max-width: 600px) {
           .contact-root { padding: 12px 2px;}

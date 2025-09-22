@@ -1,16 +1,36 @@
 import CartProvider from "./context/CartContext";
+import FavoritesProvider from "./context/FavoritesContext";
 import Header from "./components/Header";
+import PerformanceMonitor from "./components/PerformanceMonitor";
+import ServiceWorkerRegistration from "./components/ServiceWorkerRegistration";
 import "./globals.css";
 import { Toaster } from "react-hot-toast"; // اضافه کردن این خط برای Toast
+import Footer from "./components/Footer";
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="fa">
+    <html lang="fa" dir="rtl">
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="description" content="بیگ‌بیر - سوپرمارکت آنلاین با بهترین کیفیت و قیمت" />
+        <meta name="theme-color" content="#663191" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+        <meta name="apple-mobile-web-app-title" content="بیگ‌بیر" />
+        <link rel="manifest" href="/manifest.json" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" href="/icon-192x192.png" />
+      </head>
       <body>
         <CartProvider>
-          <Header />
-          {children}
-          <Toaster position="top-center" /> {/* اضافه کردن Toaster */}
+          <FavoritesProvider>
+            <ServiceWorkerRegistration />
+            <PerformanceMonitor enabled={process.env.NODE_ENV === 'production'} />
+            <Header />
+            {children}
+            <Footer />
+            <Toaster position="top-center" /> {/* اضافه کردن Toaster */}
+          </FavoritesProvider>
         </CartProvider>
       </body>
     </html>

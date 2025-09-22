@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
+
+const BASE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 import Link from "next/link";
 
 // دمو: مبلغ کل سفارش (در حالت واقعی با props یا context می‌آید)
@@ -9,11 +11,60 @@ const TOTAL_AMOUNT = 156000; // مثلا مجموع سفارش + هزینه ار
 export default function PaymentPage() {
   const [method, setMethod] = useState("online");
   const [paid, setPaid] = useState(false);
+  const [orderId, setOrderId] = useState("");
+  const [amount, setAmount] = useState(0);
+  const [err, setErr] = useState("");
 
-  function handlePay(e) {
+  useEffect(()=>{
+    try{
+      const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+      const oid = sp.get('orderId') || '';
+      const am = Number(sp.get('amount')||0);
+      const paidStatus = sp.get('paid');
+      setOrderId(oid);
+      setAmount(am);
+      // اگر از callback برگشته و پرداخت موفق بوده
+      if (paidStatus === '1') {
+        setPaid(true);
+      }
+    }catch(_){ }
+  },[]);
+
+  async function handlePay(e) {
     e.preventDefault();
-    setPaid(true);
-    // در حالت واقعی: ارسال به درگاه و تایید پرداخت
+    setErr("");
+    try{
+      if (!orderId) throw new Error('شناسه سفارش نامعتبر است');
+      
+      if (method === 'online') {
+        // شبیه‌سازی پرداخت آنلاین موفق
+        try {
+          // سعی کن با backend تماس بگیری
+          const response = await fetch(`${BASE_API}/api/payments/callback?Status=OK&Authority=TEST&orderId=${encodeURIComponent(orderId)}`);
+          if (response.ok) {
+            // اگر backend پاسخ داد، به redirect که برمی‌گردانه اعتماد کن
+            return;
+          }
+        } catch (_) {
+          console.warn('Backend not available, using frontend-only mock payment');
+        }
+        
+        // اگر backend در دسترس نیست، شبیه‌سازی موفقیت
+        setPaid(true);
+        // نمایش پیام موفقیت فرانت‌اندی
+        setTimeout(() => {
+          window.location.href = `/account?paymentSuccess=1&orderId=${encodeURIComponent(orderId)}`;
+        }, 2000);
+      } else {
+        // پرداخت نقدی - موفقیت مستقیم
+        setPaid(true);
+        setTimeout(() => {
+          window.location.href = `/account?cashPayment=1&orderId=${encodeURIComponent(orderId)}`;
+        }, 1500);
+      }
+    }catch(e){ 
+      setErr(e.message||'خطا'); 
+    }
   }
 
   return (
@@ -22,8 +73,12 @@ export default function PaymentPage() {
       {!paid ? (
         <form className="payment-form" onSubmit={handlePay}>
           <div className="payment-amount">
-            مبلغ قابل پرداخت: <b>{TOTAL_AMOUNT.toLocaleString()} تومان</b>
+            مبلغ قابل پرداخت: <b>{Number(amount||0).toLocaleString()} تومان</b>
           </div>
+          {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('paid')==='1' && (
+            <div className="payment-success">✅ پرداخت شما تایید شد.</div>
+          )}
+          {err && <div style={{color:'#c0392b', marginTop:6}}>{err}</div>}
           <div className="payment-methods">
             <label>
               <input
@@ -52,13 +107,16 @@ export default function PaymentPage() {
         </form>
       ) : (
         <div className="payment-success">
-          ✅ پرداخت شما با موفقیت ثبت شد!
-          <div style={{ marginTop: 22 }}>
-            <Link href="/orders">
-              <button className="payment-orders-btn">مشاهده سفارش‌های من</button>
+          <div className="success-icon">✅</div>
+          <h3>پرداخت موفق!</h3>
+          <p>سفارش شما با موفقیت ثبت شد.</p>
+          {orderId && <p className="order-id">شماره سفارش: <strong>{orderId.slice(-8)}</strong></p>}
+          <div className="success-actions">
+            <Link href="/account">
+              <button className="payment-orders-btn">مشاهده سفارش‌ها</button>
             </Link>
             <Link href="/">
-              <button className="payment-shop-btn">بازگشت به فروشگاه</button>
+              <button className="payment-shop-btn">انتخاب محصول دیگر</button>
             </Link>
           </div>
         </div>
@@ -113,10 +171,38 @@ export default function PaymentPage() {
         }
         .payment-success {
           color: #27ae60;
-          font-size: 21px;
+          font-size: 18px;
           text-align: center;
-          margin-top: 55px;
+          margin-top: 40px;
           font-family: Vazirmatn,sans-serif;
+        }
+        .success-icon {
+          font-size: 48px;
+          margin-bottom: 16px;
+        }
+        .payment-success h3 {
+          font-size: 24px;
+          margin: 16px 0 8px 0;
+          color: #27ae60;
+        }
+        .payment-success p {
+          font-size: 16px;
+          color: #666;
+          margin: 8px 0;
+        }
+        .order-id {
+          background: #f8f9fa;
+          border: 1px solid #e9ecef;
+          border-radius: 8px;
+          padding: 8px 12px;
+          font-size: 14px;
+          margin: 16px 0 !important;
+        }
+        .success-actions {
+          margin-top: 24px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
         }
         .payment-orders-btn, .payment-shop-btn {
           background: #27ae60;

@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# repo-wide
+node_modules/
+**/node_modules/
+shop-backend/node_modules/
+mongo-data/
+

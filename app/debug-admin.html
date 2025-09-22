@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Admin Auth</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .result { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffebee; }
+        .success { background: #e8f5e9; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Debug Admin Authentication</h1>
+    
+    <button onclick="checkToken()">1. بررسی Token در localStorage</button>
+    <div id="token-result" class="result"></div>
+    
+    <button onclick="testAuthMe()">2. تست /api/auth/me</button>
+    <div id="auth-result" class="result"></div>
+    
+    <button onclick="testAdminGate()">3. تست /api/admin/gate</button>
+    <div id="gate-result" class="result"></div>
+
+    <script>
+        function checkToken() {
+            const token = localStorage.getItem('auth_token');
+            const result = document.getElementById('token-result');
+            
+            if (token) {
+                result.className = 'result success';
+                result.innerHTML = `✅ Token موجود است:<br><small>${token.substring(0, 50)}...</small>`;
+            } else {
+                result.className = 'result error';
+                result.innerHTML = '❌ Token موجود نیست! ابتدا وارد شوید.';
+            }
+        }
+
+        async function testAuthMe() {
+            const token = localStorage.getItem('auth_token');
+            const result = document.getElementById('auth-result');
+            
+            if (!token) {
+                result.className = 'result error';
+                result.innerHTML = '❌ ابتدا وارد شوید!';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:5000/api/auth/me', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.className = 'result success';
+                    result.innerHTML = `✅ API جواب داد:<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    result.className = 'result error';
+                    result.innerHTML = `❌ خطا: ${data.error || response.statusText}`;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.innerHTML = `❌ خطای شبکه: ${error.message}`;
+            }
+        }
+
+        async function testAdminGate() {
+            const token = localStorage.getItem('auth_token');
+            const result = document.getElementById('gate-result');
+            
+            if (!token) {
+                result.className = 'result error';
+                result.innerHTML = '❌ ابتدا وارد شوید!';
+                return;
+            }
+
+            try {
+                const response = await fetch('http://localhost:5000/api/admin/gate', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.className = 'result success';
+                    result.innerHTML = `✅ Admin Gate OK:<br><pre>${JSON.stringify(data, null, 2)}</pre>`;
+                } else {
+                    result.className = 'result error';
+                    result.innerHTML = `❌ Admin Gate خطا: ${data.error || response.statusText}`;
+                }
+            } catch (error) {
+                result.className = 'result error';
+                result.innerHTML = `❌ خطای شبکه: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

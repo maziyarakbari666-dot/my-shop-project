@@ -47,7 +47,7 @@ export default function CategoryProductsPage() {
 
   return (
     <div className="catprod-root">
-      <h2 className="catprod-title">محصولات دسته "{catName}"</h2>
+      <h2 className="catprod-title">محصولات دسته &quot;{catName}&quot;</h2>
       {filtered.length === 0 ? (
         <div className="catprod-empty">در این دسته‌بندی محصولی وجود ندارد.</div>
       ) : (

@@ -1,14 +1,66 @@
+:root {
+  /* BigBir brand colors */
+  --brand-orange-1: #FBAD1B;
+  --brand-orange-2: #F26826;
+  --brand-purple-1: #7156A5;
+  --brand-purple-2: #663191;
+
+  /* mapped tokens */
+  --primary: var(--brand-purple-2);
+  --accent: var(--brand-orange-2);
+  --bg: #faf7ff;
+  --text: #2b2b2b;
+}
+
+/* Reset and base styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 16px;
+  line-height: 1.6;
+  scroll-behavior: smooth;
+}
+
 body {
-  font-family: Vazirmatn, sans-serif;
-  background: #fafafa;
+  font-family: Vazirmatn, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
   min-height: 100vh;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Performance optimizations */
+img, video, iframe {
+  max-width: 100%;
+  height: auto;
+}
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+/* Focus styles for accessibility */
+button:focus-visible, 
+input:focus-visible, 
+select:focus-visible, 
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 /* بنر */
 .banner {
   width: 100%;
   height: 170px;
-  background: linear-gradient(90deg, #27ae60 60%, #f7ca18 100%);
+  background: linear-gradient(90deg, var(--brand-purple-1) 40%, var(--brand-orange-2) 100%);
   color: #fff;
   display: flex;
   align-items: center;
@@ -55,7 +107,7 @@ body {
   font-weight: bold;
   font-size: 20px;
   margin: 16px 0 8px 0;
-  color: #27ae60;
+  color: var(--primary);
 }
 .product-price {
   color: #888;
@@ -63,7 +115,7 @@ body {
 }
 .add-to-cart-btn {
   padding: 10px 28px;
-  background: #27ae60;
+  background: linear-gradient(90deg, var(--brand-orange-2), var(--brand-orange-1));
   color: #fff;
   border: none;
   border-radius: 9px;

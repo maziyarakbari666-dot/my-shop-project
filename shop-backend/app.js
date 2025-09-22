@@ -2,75 +2,239 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
-const mongoSanitize = require('express-mongo-sanitize');
+const cookieParser = require('cookie-parser');
+const csrf = require('csurf');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
-<<<<<<< HEAD
-const productRoutes = require('./routes/productRoutes');
-const orderRoutes = require('./routes/orderRoutes'); // ← مرحله ۴ اینجاست!
-=======
-const { apiResponse, errorHandler } = require('./middleware/response');
-const logger = require('./utils/logger');
-const userController = require('./controllers/userController');
-const productController = require('./controllers/productController');
-const categoryController = require('./controllers/categoryController');
-const orderController = require('./controllers/orderController');
+const compression = require('compression');
+const { sanitize } = require('express-mongo-sanitize');
+const { MongoMemoryServer } = require('mongodb-memory-server');
+
+const { apiResponse } = require('./middleware/response');
+const { errorHandler } = require('./middleware/error');
 const { isAuthenticated, isAdmin } = require('./middleware/auth');
-const upload = require('./middleware/upload');
->>>>>>> 52aec5e0824b0bbdf41a9c6b5055947101311081
+const { productCache, categoryCache, settingsCache } = require('./middleware/cache');
+
+const productRoutes = require('./routes/productRoutes');
+const orderRoutes = require('./routes/orderRoutes');
+const userRoutes = require('./routes/userRoutes');
+const couponRoutes = require('./routes/couponRoutes');
+const walletRoutes = require('./routes/walletRoutes');
+const adminRoutes = require('./routes/adminRoutes');
+const courierRoutes = require('./routes/courierRoutes');
+const Settings = require('./models/Settings');
+const paymentRoutes = require('./routes/paymentRoutes');
+const cartRoutes = require('./routes/cartRoutes');
+const addressRoutes = require('./routes/addressRoutes');
+const categoryController = require('./controllers/categoryController');
+const bnplRoutes = require('./routes/bnplRoutes');
+const { startScheduler: startBnplReminderScheduler } = require('./services/bnplReminder');
+const { scheduleDeletion } = require('./services/whatsapp');
 
 const app = express();
+const userController = require('./controllers/userController');
+
+// Body parsing
 app.use(express.json());
-app.use(cors({ origin: '*', credentials: true }));
-app.use(helmet());
-app.use(mongoSanitize());
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'تعداد درخواست بیش از حد مجاز است.'
+// Sanitize MongoDB operators from payloads
+// Sanitize Mongo-like operators in request payloads without reassigning req.query
+app.use((req, res, next) => {
+  try {
+    if (req.body) sanitize(req.body);
+    if (req.params) sanitize(req.params);
+    if (req.headers) sanitize(req.headers);
+    if (req.query) sanitize(req.query);
+    next();
+  } catch (e) {
+    next(e);
+  }
+});
+// Cookie parsing for httpOnly auth cookies
+app.use(cookieParser());
+
+// CORS (restrict origins via env; allow non-browser tools without Origin)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || 'http://localhost:3000').split(',').map(s => s.trim()).filter(Boolean);
+app.use(cors({
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+  optionsSuccessStatus: 204,
 }));
+
+// Security
+app.use(helmet());
+// Content Security Policy (conservative; relaxed in dev for inline/eval)
+const isProd = process.env.NODE_ENV === 'production';
+app.use(helmet.contentSecurityPolicy({
+  useDefaults: true,
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: isProd ? ["'self'"] : ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    imgSrc: ["'self'", 'data:', 'https://images.unsplash.com', 'http://localhost'],
+    connectSrc: ["'self'"].concat((process.env.ALLOWED_ORIGINS || '').split(',').filter(Boolean)),
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+  },
+}));
+// Global API rate limiting (scoped to /api, with standard headers and JSON handler)
+// Exempt auth/me and auth/send-otp because they have dedicated limiters below
+const globalApiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 300 : 10000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => {
+    try {
+      return req.path === '/auth/send-otp' || (req.method === 'GET' && req.path === '/auth/me');
+    } catch (_) {
+      return false;
+    }
+  },
+  handler: (req, res/*, next*/) => {
+    return res.fail('تعداد درخواست بیش از حد مجاز است.', 429);
+  }
+});
+// Compression with optimized settings
+app.use(compression({
+  level: 6, // Balanced compression level
+  threshold: 1024, // Only compress files > 1KB
+  filter: (req, res) => {
+    // Don't compress if client doesn't support it
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    // Use compression filter for other responses
+    return compression.filter(req, res);
+  }
+}));
+
+// Response helpers
 app.use(apiResponse);
 
-<<<<<<< HEAD
-mongoose.connect('mongodb://localhost:27017/shop-db')
-  .then(() => console.log('Connected to MongoDB'));
-
-app.use('/api/products', productRoutes);
-app.use('/api/orders', orderRoutes); // ← مرحله ۴ اینجاست!
-
-app.get('/', (req, res) => {
-  res.send('Shop Backend is running');
+// CSRF protection (scoped): issue token via endpoint; enforce on cart mutations
+const csrfProtection = csrf({ cookie: { httpOnly: true, sameSite: isProd ? 'strict' : 'lax', secure: isProd } });
+app.get('/api/csrf', csrfProtection, (req, res) => {
+  try { return res.success({ csrfToken: req.csrfToken() }); } catch (e) { return res.fail('CSRF error', 500); }
 });
 
-const PORT = 3000;
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// DB (with in-memory fallback)
+async function initDatabase() {
+  const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
+  try {
+    await mongoose.connect(mongoUri);
+    console.log('Connected to MongoDB');
+  } catch (err) {
+    console.error('MongoDB connection error:', err.message);
+    if (process.env.NODE_ENV !== 'production') {
+      try {
+        const mem = await MongoMemoryServer.create();
+        const memUri = mem.getUri();
+        await mongoose.connect(memUri);
+        console.log('Connected to in-memory MongoDB (dev/test)');
+      } catch (e) {
+        console.error('Failed to start in-memory MongoDB:', e.message);
+      }
+    } else {
+      console.error('FATAL: Database connection failed in production. Exiting.');
+      process.exit(1);
+    }
+  }
+}
+initDatabase();
+
+// Routes
+// Dedicated rate limit for auth endpoints (return JSON via apiResponse)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: isProd ? 20 : 1000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res/*, next*/) => {
+    return res.fail('درخواست بیش از حد برای احراز هویت. لطفا بعدا تلاش کنید.', 429);
+  }
 });
-=======
-mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+const otpLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: isProd ? 5 : 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res/*, next*/) => {
+    return res.fail('ارسال بیش از حد کد. لطفا بعدا تلاش کنید.', 429);
+  }
+});
+// Apply global API limiter (skips /auth/me and /auth/send-otp per config above)
+app.use('/api', globalApiLimiter);
+// Exempt GET /api/auth/me and POST /api/auth/send-otp from the general authLimiter
+app.get('/api/auth/me', isAuthenticated, userController.me);
+app.use('/api/auth/send-otp', otpLimiter);
+app.use('/api/auth', (req, res, next) => {
+  if (req.path === '/send-otp' || (req.method === 'GET' && req.path === '/me')) return next();
+  return authLimiter(req, res, next);
+}, userRoutes);
+app.use('/api/products', productCache, productRoutes);
+app.use('/api/orders', orderRoutes);
+app.use('/api/coupons', couponRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/api/couriers', courierRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/bnpl', bnplRoutes);
+app.use('/api/users', require('./routes/users'));
+app.use('/api/cart', csrfProtection, cartRoutes);
 
-app.post('/api/auth/signup', userController.signup);
-app.post('/api/auth/login', userController.login);
+// simple scheduler (every 10 minutes) to delete expired WhatsApp messages
+try {
+  setInterval(() => {
+    try { scheduleDeletion(); } catch(_){ }
+  }, 10 * 60 * 1000);
+} catch (_) {}
+app.use('/api/addresses', addressRoutes);
 
-app.post('/api/products', isAuthenticated, isAdmin, upload.single('image'), productController.addProduct);
-app.get('/api/products', productController.searchProducts);
+// Public settings
+app.get('/api/settings', async (req, res) => {
+  try {
+    const s = await Settings.findOne().sort({ createdAt: -1 });
+    if (!s) return res.success({ settings: {} });
+    // expose only public subset
+    const pub = {
+      deliveryZones: s.deliveryZones,
+      dailyHours: s.dailyHours,
+      payments: s.payments,
+      hero: s.hero,
+      about: s.about,
+      contact: s.contact,
+      footer: s.footer
+    };
+    res.success({ settings: pub });
+  } catch (e) { res.fail('خطا در تنظیمات', 500); }
+});
 
+// Category minimal endpoints
 app.post('/api/categories', isAuthenticated, isAdmin, categoryController.addCategory);
 app.get('/api/categories', categoryController.getCategories);
 
-app.post('/api/orders', isAuthenticated, orderController.createOrder);
-app.get('/api/orders', isAuthenticated, orderController.getUserOrders);
-app.post('/api/orders/pay', isAuthenticated, orderController.payOrder);
+// Static
+app.use('/uploads', express.static('uploads', { maxAge: '7d', etag: true }));
 
-app.use('/uploads', express.static('uploads'));
+// Health
+app.get('/', (req, res) => { res.send('Shop Backend is running'); });
 
+// Error handler
 app.use(errorHandler);
 
-app.use((err, req, res, next) => {
-  logger.error(`${err.message} - ${req.method} ${req.url}`, { stack: err.stack });
-  res.status(500).json({ status: 'error', error: 'خطای سرور!' });
-});
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => logger.info(`Server running on port ${PORT}`));
->>>>>>> 52aec5e0824b0bbdf41a9c6b5055947101311081
+// Background jobs (BNPL reminders)
+try {
+  if (String(process.env.ENABLE_JOBS || 'true').toLowerCase() === 'true') {
+    startBnplReminderScheduler();
+  }
+} catch (e) {
+  console.error('[BNPL][REMINDER] Failed to start scheduler:', e.message);
+}
+

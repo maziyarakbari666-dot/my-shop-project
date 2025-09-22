@@ -1,0 +1,29 @@
+{
+  "name": "بیگ‌بیر - سوپرمارکت آنلاین",
+  "short_name": "بیگ‌بیر",
+  "description": "سوپرمارکت آنلاین بیگ‌بیر با بهترین کیفیت و قیمت",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#faf7ff",
+  "theme_color": "#663191",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "lang": "fa",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "food", "lifestyle"],
+  "prefer_related_applications": false
+}

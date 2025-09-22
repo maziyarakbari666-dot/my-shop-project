@@ -1,17 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const orderController = require('../controllers/orderController');
+const { isAuthenticated, isAdmin } = require('../middleware/auth');
 
-// افزودن سفارش جدید
-router.post('/', orderController.addOrder);
-
-// دریافت همه سفارش‌ها
-router.get('/', orderController.getAllOrders);
-
-// دریافت یک سفارش خاص
-router.get('/:id', orderController.getOrder);
-
-// لغو سفارش
-router.post('/:id/cancel', orderController.cancelOrder);
+// Guest checkout allowed for creating order
+router.post('/', orderController.createOrder);
+router.get('/', isAuthenticated, orderController.getUserOrders);
+router.post('/pay', isAuthenticated, orderController.payOrder);
+router.get('/all', isAuthenticated, isAdmin, orderController.getAllOrders);
+router.post('/:id/cancel', isAuthenticated, isAdmin, orderController.cancelOrder);
+router.post('/:id/send-to-courier', isAuthenticated, isAdmin, orderController.sendToCourier);
 
 module.exports = router;

@@ -1,5 +1,7 @@
 'use client';
 
+import React from "react";
+import Image from "next/image";
 import Link from "next/link";
 
 const categories = [
@@ -32,7 +34,15 @@ export default function CategoriesPage() {
             href={`/categories/${cat.id}`}
             className="cat-card"
           >
-            <img src={cat.image} alt={cat.name} className="cat-img" />
+            <Image 
+              src={cat.image} 
+              alt={cat.name} 
+              width={120} 
+              height={120} 
+              className="cat-img"
+              loading="lazy"
+              quality={80}
+            />
             <div className="cat-name">{cat.name}</div>
           </Link>
         ))}
