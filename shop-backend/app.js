@@ -7,6 +7,7 @@ const csrf = require('csurf');
 const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const compression = require('compression');
+const morgan = require('morgan');
 const { sanitize } = require('express-mongo-sanitize');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -68,6 +69,20 @@ app.use(cors({
 app.use(helmet());
 // Content Security Policy (conservative; relaxed in dev for inline/eval)
 const isProd = process.env.NODE_ENV === 'production';
+const isTest = process.env.NODE_ENV === 'test';
+// HTTP request logging (dev: concise, prod: combined)
+app.use(morgan(isProd ? 'combined' : 'dev'));
+// Trust proxy (for x-forwarded-* headers behind reverse proxies/load balancers)
+app.set('trust proxy', 1);
+// Enforce HTTPS in production (honors x-forwarded-proto thanks to trust proxy)
+if (isProd && String(process.env.FORCE_HTTPS || 'true').toLowerCase() === 'true') {
+  app.use((req, res, next) => {
+    if (req.secure) return next();
+    const host = req.headers.host;
+    const url = req.originalUrl || req.url || '/';
+    return res.redirect(301, `https://${host}${url}`);
+  });
+}
 app.use(helmet.contentSecurityPolicy({
   useDefaults: true,
   directives: {
@@ -126,7 +141,7 @@ async function initDatabase() {
   const mongoUri = process.env.MONGO_URI || 'mongodb://localhost:27017/shop';
   try {
     await mongoose.connect(mongoUri);
-    console.log('Connected to MongoDB');
+    if (!isTest) console.log('Connected to MongoDB');
   } catch (err) {
     console.error('MongoDB connection error:', err.message);
     if (process.env.NODE_ENV !== 'production') {
@@ -134,7 +149,7 @@ async function initDatabase() {
         const mem = await MongoMemoryServer.create();
         const memUri = mem.getUri();
         await mongoose.connect(memUri);
-        console.log('Connected to in-memory MongoDB (dev/test)');
+        if (!isTest) console.log('Connected to in-memory MongoDB (dev/test)');
       } catch (e) {
         console.error('Failed to start in-memory MongoDB:', e.message);
       }
@@ -187,11 +202,13 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/cart', csrfProtection, cartRoutes);
 
 // simple scheduler (every 10 minutes) to delete expired WhatsApp messages
-try {
-  setInterval(() => {
-    try { scheduleDeletion(); } catch(_){ }
-  }, 10 * 60 * 1000);
-} catch (_) {}
+if (!isTest) {
+  try {
+    setInterval(() => {
+      try { scheduleDeletion(); } catch(_){ }
+    }, 10 * 60 * 1000);
+  } catch (_) {}
+}
 app.use('/api/addresses', addressRoutes);
 
 // Public settings
@@ -226,15 +243,13 @@ app.get('/', (req, res) => { res.send('Shop Backend is running'); });
 // Error handler
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => { console.log(`Server running on port ${PORT}`); });
-
 // Background jobs (BNPL reminders)
 try {
-  if (String(process.env.ENABLE_JOBS || 'true').toLowerCase() === 'true') {
+  const enableJobsDefault = isTest ? 'false' : 'true';
+  if (String(process.env.ENABLE_JOBS || enableJobsDefault).toLowerCase() === 'true') {
     startBnplReminderScheduler();
   }
 } catch (e) {
   console.error('[BNPL][REMINDER] Failed to start scheduler:', e.message);
 }
-
+module.exports = app;

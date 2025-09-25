@@ -21,13 +21,15 @@ export default function RootLayout({ children }) {
         <link rel="icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" href="/icon-192x192.png" />
       </head>
-      <body>
+      <body className="bg-[var(--bg)] text-[var(--text)] min-h-screen flex flex-col">
         <CartProvider>
           <FavoritesProvider>
             <ServiceWorkerRegistration />
             <PerformanceMonitor enabled={process.env.NODE_ENV === 'production'} />
             <Header />
-            {children}
+            <main className="container mx-auto px-4 flex-1 w-full max-w-7xl">
+              {children}
+            </main>
             <Footer />
             <Toaster position="top-center" /> {/* اضافه کردن Toaster */}
           </FavoritesProvider>

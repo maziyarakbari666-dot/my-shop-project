@@ -4,8 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "cross-env NODE_ENV=development node app.js",
-    "start": "cross-env NODE_ENV=production node app.js"
+    "dev": "cross-env NODE_ENV=development nodemon server.js",
+    "start": "cross-env NODE_ENV=production node server.js",
+    "test": "cross-env NODE_ENV=test jest --runInBand"
   },
   "keywords": [],
   "author": "",
@@ -17,20 +18,41 @@
     "cors": "^2.8.5",
     "cross-env": "^7.0.3",
     "dotenv": "^17.2.2",
+    "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.5.1",
+    "glob": "^11.0.3",
     "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb-memory-server": "^10.2.0",
     "mongoose": "^8.18.0",
+    "morgan": "^1.10.0",
     "multer": "^2.0.2",
     "my-shop2": "file:..",
+    "nodemailer": "^6.9.14",
+    "superagent": "^10.2.3",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8",
-    "nodemailer": "^6.9.14"
+    "zod": "^3.23.8"
   },
   "optionalDependencies": {
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.7",
+    "supertest": "^7.1.4"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "roots": [
+      "<rootDir>/__tests__"
+    ],
+    "transform": {},
+    "moduleFileExtensions": [
+      "js",
+      "json"
+    ],
+    "collectCoverage": false
   }
 }
