@@ -65,12 +65,23 @@ export default function HomePage() {
   }, [addToCart]);
 
   const [hero, setHero] = useState({ title: 'بیگ‌بیر - سوپرمارکت آنلاین', subtitle: 'تازه‌ترین محصولات، ارسال سریع، پرداخت اعتباری', slides: [] });
+  const [recs, setRecs] = useState([]);
   useEffect(()=>{
     (async()=>{
       try {
         const r = await fetch(`${BASE_API}/api/settings`, { cache: 'no-store' });
         const d = await r.json();
         if (r.ok && d?.settings?.hero) setHero(d.settings.hero);
+      } catch(_) {}
+    })();
+  },[]);
+
+  useEffect(()=>{
+    (async()=>{
+      try {
+        const rr = await fetch(`${BASE_API}/api/recommendations`, { cache: 'no-store' });
+        const dj = await rr.json();
+        if (rr.ok) setRecs(dj?.recommendations || []);
       } catch(_) {}
     })();
   },[]);
@@ -190,6 +201,36 @@ export default function HomePage() {
           </div>
         )}
       </div>
+
+      {recs.length > 0 && (
+        <div className={styles.productsSection}>
+          <h2 className={styles.productsTitle}>پیشنهادهای هوشمند</h2>
+          <div className={styles.productsList}>
+            {recs.slice(0, 12).map((p, index) => (
+              <LazyWrapper
+                key={p._id}
+                fallback={
+                  <div className={styles.skeleton}>
+                    <div className={styles.skeletonImg} />
+                    <div style={{ width: '100%' }}>
+                      <div className={styles.skeletonLine} style={{ width: '60%', height: 14 }} />
+                      <div className={styles.skeletonLine} style={{ width: '90%', height: 12, marginTop: 6 }} />
+                      <div className={styles.skeletonLine} style={{ width: '40%', height: 14, marginTop: 8 }} />
+                    </div>
+                  </div>
+                }
+                threshold={index < 6 ? 0 : 0.1}
+                rootMargin={index < 6 ? '0px' : '100px'}
+              >
+                <ProductCard 
+                  product={p} 
+                  onAdd={() => handleAddToCart(p)} 
+                />
+              </LazyWrapper>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   );

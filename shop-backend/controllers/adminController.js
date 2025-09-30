@@ -1,6 +1,8 @@
 const User = require('../models/User');
 const Order = require('../models/Order');
 const Product = require('../models/Product');
+const Order = require('../models/Order');
+const Insight = require('../models/Insight');
 
 // One-time seeding: promote a user to admin using a setup token
 exports.seedAdmin = async (req, res, next) => {
@@ -151,6 +153,68 @@ exports.analyticsByCategory = async (req, res, next) => {
       return res.send(csvRows.join('\n'));
     }
     res.success({ rows });
+  } catch (err) { next(err); }
+};
+
+// Top-selling products (by quantity) in a date range
+exports.topProducts = async (req, res, next) => {
+  try {
+    const { from, to, limit = 10 } = req.query;
+    const filter = {};
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to) filter.createdAt.$lte = new Date(to);
+    }
+    const orders = await Order.find(filter).lean();
+    const counter = new Map();
+    for (const o of orders) {
+      for (const line of o.products || []) {
+        const id = String(line.product);
+        counter.set(id, (counter.get(id) || 0) + Number(line.quantity||0));
+      }
+    }
+    const arr = Array.from(counter.entries()).sort((a,b)=>b[1]-a[1]).slice(0, Math.min(Number(limit)||10, 100));
+    const ids = arr.map(([id]) => id);
+    const prods = await Product.find({ _id: { $in: ids } }).lean();
+    const byId = new Map(prods.map(p => [String(p._id), p]));
+    const rows = arr.map(([id, qty]) => ({ qty, ...byId.get(id) }));
+    res.success({ rows });
+  } catch (err) { next(err); }
+};
+
+// SSE stream for admin mini-metrics
+exports.streamSSE = async (req, res, next) => {
+  try {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    let closed = false;
+    req.on('close', () => { closed = true; clearInterval(timer); });
+
+    async function emitMetrics() {
+      try {
+        const now = new Date();
+        const start = new Date(now); start.setHours(0,0,0,0);
+        const end = now;
+        const q = { createdAt: { $gte: start, $lte: end } };
+        const ordersToday = await Order.countDocuments(q);
+        const pendingToday = await Order.countDocuments({ ...q, status: 'pending' });
+        const anomaly = await Insight.findOne({ kind: 'anomaly' }).sort({ createdAt: -1 }).lean();
+        const hasAnomaly = Boolean(anomaly?.payload?.message);
+        const payload = { ordersToday, pendingToday, hasAnomaly, ts: Date.now() };
+        res.write(`event: metrics\n`);
+        res.write(`data: ${JSON.stringify(payload)}\n\n`);
+      } catch (e) {
+        // soft-fail
+      }
+    }
+
+    // initial
+    await emitMetrics();
+    const timer = setInterval(() => { if (!closed) emitMetrics(); }, 15000);
   } catch (err) { next(err); }
 };
 

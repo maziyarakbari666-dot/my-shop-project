@@ -7,6 +7,7 @@ import toast from "react-hot-toast";
 export default function AdminPage() {
   const [gateOk, setGateOk] = useState(false);
   const BASE_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  const [running, setRunning] = useState(false);
 
   useEffect(() => {
     async function checkAdminGate() {
@@ -101,6 +102,41 @@ export default function AdminPage() {
         </Link>
       </div>
 
+      {/* دکمه اجرای دستی تعامل مشتری */}
+      <div className="admin-actions">
+        <button
+          className="run-btn"
+          disabled={running}
+          onClick={async () => {
+            try {
+              setRunning(true);
+              const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : '';
+              if (!token) {
+                toast.error('ابتدا وارد شوید.');
+                window.location.href = '/login?redirect=/admin';
+                return;
+              }
+              const res = await fetch(`${BASE_API}/api/admin/engagement/run`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              if (res.ok) {
+                toast.success('وظایف تعامل با موفقیت اجرا شد.');
+              } else {
+                const data = await res.json().catch(() => ({}));
+                toast.error(data?.message || 'اجرای تعامل ناموفق بود.');
+              }
+            } catch (e) {
+              toast.error('خطای غیرمنتظره در اجرای تعامل');
+            } finally {
+              setRunning(false);
+            }
+          }}
+        >
+          {running ? 'در حال اجرا...' : 'اجرای تعاملات مشتری'}
+        </button>
+      </div>
+
       {/* استایل مدرن و ریسپانسیو */}
       <style>{`
         .admin-root {
@@ -174,6 +210,25 @@ export default function AdminPage() {
           line-height: 1.4;
           margin: 0;
         }
+
+        .admin-actions {
+          margin-top: 28px;
+          display: flex;
+          justify-content: center;
+        }
+        .run-btn {
+          background: linear-gradient(135deg, #ff7f23, #ff9f4d);
+          color: #fff;
+          border: 0;
+          border-radius: 10px;
+          padding: 12px 20px;
+          font-weight: 700;
+          cursor: pointer;
+          box-shadow: 0 6px 18px rgba(255,127,35,0.35);
+          transition: transform .15s ease, box-shadow .2s ease, opacity .2s;
+        }
+        .run-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(255,127,35,0.45); }
+        .run-btn:disabled { opacity: .6; cursor: not-allowed; transform: none; box-shadow: none; }
 
         /* ریسپانسیو */
         @media (max-width: 768px) {

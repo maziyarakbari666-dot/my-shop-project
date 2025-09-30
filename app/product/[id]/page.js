@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import Image from "next/image";
 import { useParams } from "next/navigation";
 import { useCart } from "../../context/CartContext";
+import DeliveryTimeSelector from "../../components/DeliveryTimeSelector";
 
 const products = [
   {
@@ -67,6 +68,9 @@ export default function ProductPage() {
   const touchActive = useRef(false);
   const [dragX, setDragX] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedDateISO, setSelectedDateISO] = useState(() => new Date().toISOString());
+  const [selectedSlot, setSelectedSlot] = useState("");
+  const todayISO = useMemo(()=> new Date().toISOString(), []);
 
   useEffect(() => {
     // fetch from backend if available
@@ -204,7 +208,7 @@ export default function ProductPage() {
             <div className="prod-actions">
               <button
                 className="prod-btn"
-                disabled={(Number(product.stock)||0) === 0}
+                disabled={(Number(product.stock)||0) === 0 || (String(product.name||'').includes('نان') && !selectedSlot)}
                 onClick={() => addToCart({ id: product._id || product.id, name: product.name, category: (typeof product.category === 'string' ? product.category : (product.category?.name || '')), price: Number(product.price)||0, images: product.images && product.images.length ? product.images : (product.image ? [product.image] : []), quantity: 1 })}
               >
                 افزودن به سبد خرید
@@ -212,6 +216,27 @@ export default function ProductPage() {
               {/* دکمه خرید سریع حذف شد */}
               <a href="#comments" className="prod-link-comments">مشاهده نظرات</a>
             </div>
+            {String(product.name||'').includes('نان') && (
+              <div style={{marginTop:12}}>
+                <div style={{ fontWeight: 800, color: 'var(--accent)', marginBottom: 8 }}>زمان تحویل نان تازه</div>
+                <div className="triple-row">
+                  <div className="triple-card">
+                    <label>تاریخ</label>
+                    <input type="date" value={new Date(selectedDateISO).toISOString().slice(0,10)} onChange={(e)=>{
+                      const val = e.target.value;
+                      const d = new Date(val + 'T00:00:00');
+                      setSelectedDateISO(d.toISOString());
+                      setSelectedSlot('');
+                    }} />
+                  </div>
+                  <div className="triple-card">
+                    <label>بازه زمانی</label>
+                    <DeliveryTimeSelector dateISO={selectedDateISO} value={selectedSlot} onChange={setSelectedSlot} />
+                    {!selectedSlot && (<div className="hint-muted">✅ نان موجود است. لطفاً بازه زمانی تحویل را انتخاب کنید.</div>)}
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="prod-desc">{product.description}</div>
           </div>
         </div>

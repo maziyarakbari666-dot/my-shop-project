@@ -37,10 +37,12 @@ exports.createOrder = async (req, res, next) => {
       return res.fail('نام و نام خانوادگی را وارد کنید.', 422);
     }
     let totalPrice = 0;
+    let hasBread = false;
     products.forEach(p => {
       const price = Number(p.price) || 0;
       const quantity = Number(p.quantity) || 0;
       totalPrice += price * quantity;
+      if (String(p.category||'').includes('نان')) hasBread = true;
     });
     const itemsSubtotal = totalPrice;
     // final price includes fee and discount
@@ -50,7 +52,7 @@ exports.createOrder = async (req, res, next) => {
     totalPrice = totalPrice + fee - (Number(discount) || 0);
     // delivery rules: if has bread category => min +2h from now; else +1.5h
     const now = new Date();
-    const minMs = (products || []).some(p => String(p.category || '').includes('نان')) ? 2 * 60 * 60 * 1000 : 90 * 60 * 1000;
+    const minMs = hasBread ? 2 * 60 * 60 * 1000 : 90 * 60 * 1000;
     let requested = deliveryDate ? new Date(deliveryDate) : undefined;
     if (requested && deliverySlot) {
       // try to coerce slot start hour
@@ -61,6 +63,45 @@ exports.createOrder = async (req, res, next) => {
     }
     if (requested && requested.getTime() - now.getTime() < minMs) {
       return res.fail('بازه زمانی انتخابی مجاز نیست. لطفاً بازه دیرتری انتخاب کنید.', 400);
+    }
+
+    // If bread is in cart, enforce BreadAvailability slot capacity
+    if (hasBread) {
+      try {
+        const BreadAvailability = require('../models/BreadAvailability');
+        const Product = require('../models/Product');
+        const breadProducts = await Product.find({ name: /نان/i });
+        const breadIds = breadProducts.map(p => String(p._id));
+        // find matching slot for requested date and deliverySlot string like "7 تا 9"
+        if (requested && deliverySlot) {
+          const slotMatch = /^(\d{1,2})\s*تا\s*(\d{1,2})$/.exec(String(deliverySlot));
+          if (slotMatch) {
+            const startHour = Number(slotMatch[1]);
+            const endHour = Number(slotMatch[2]);
+            const day = new Date(requested); day.setHours(0,0,0,0);
+            const from = new Date(day); from.setHours(startHour, 0, 0, 0);
+            const to = new Date(day); to.setHours(endHour, 0, 0, 0);
+            const slot = await BreadAvailability.findOne({ productId: { $in: breadIds }, fromTime: from, toTime: to });
+            if (!slot || !slot.isAvailable) {
+              return res.fail('این بازه برای نان در دسترس نیست.', 400);
+            }
+            // compute quantity of bread in cart
+            const breadQty = (products||[]).filter(p => String(p.category||'').includes('نان')).reduce((s, p) => s + (Number(p.quantity)||0), 0);
+            if ((slot.sold + breadQty) > slot.quantity) {
+              return res.fail('ظرفیت نان در این بازه تکمیل شده است.', 400);
+            }
+            // reserve: increment sold atomically
+            const updated = await BreadAvailability.findOneAndUpdate(
+              { _id: slot._id, sold: { $lte: slot.quantity - breadQty } },
+              { $inc: { sold: breadQty }, $set: { isAvailable: (slot.sold + breadQty) < slot.quantity } },
+              { new: true }
+            );
+            if (!updated) {
+              return res.fail('ظرفیت نان در این بازه کافی نیست.', 400);
+            }
+          }
+        }
+      } catch (_) {}
     }
 
     // enforce payments toggles from settings
@@ -154,18 +195,27 @@ exports.createOrder = async (req, res, next) => {
     }
     // If user is logged in and provided a contactName, try to sync it to User.name
     try {
-      if (order.user && contactName && String(contactName).trim().length >= 2) {
+      if (order.user) {
         const User = require('../models/User');
         const u = await User.findById(order.user);
         if (u) {
-          const trimmed = String(contactName).trim();
-          // Avoid overwriting with a phone-like string
-          const onlyDigits = trimmed.replace(/\s|-/g, '');
-          const looksLikePhone = /^(?:\+?98|0)?9\d{9}$/.test(onlyDigits);
-          if (!looksLikePhone && u.name !== trimmed) {
-            u.name = trimmed;
-            await u.save();
+          // update basic info
+          if (contactName && String(contactName).trim().length >= 2) {
+            const trimmed = String(contactName).trim();
+            const onlyDigits = trimmed.replace(/\s|-/g, '');
+            const looksLikePhone = /^(?:\+?98|0)?9\d{9}$/.test(onlyDigits);
+            if (!looksLikePhone && u.name !== trimmed) {
+              u.name = trimmed;
+            }
           }
+          if (order.contactPhone && !u.phoneNumber) {
+            u.phoneNumber = order.contactPhone;
+            if (!u.phone) u.phone = order.contactPhone;
+          }
+          // engagement metrics
+          u.totalOrders = Math.max(0, Number(u.totalOrders||0)) + 1;
+          u.lastOrderDate = new Date();
+          await u.save();
         }
       }
     } catch (_) {}

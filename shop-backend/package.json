@@ -22,10 +22,12 @@
     "express": "^4.19.2",
     "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^7.5.1",
+    "axios": "^1.7.7",
     "glob": "^11.0.3",
     "helmet": "^7.2.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb-memory-server": "^10.2.0",
+    "node-cron": "^3.0.3",
     "mongoose": "^8.18.0",
     "morgan": "^1.10.0",
     "multer": "^2.0.2",
@@ -33,7 +35,10 @@
     "nodemailer": "^6.9.14",
     "superagent": "^10.2.3",
     "xlsx": "^0.18.5",
-    "zod": "^3.23.8"
+    "openai": "^4.83.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.8",
+    "uuid": "^9.0.1"
   },
   "optionalDependencies": {
     "node-fetch": "^3.3.2"

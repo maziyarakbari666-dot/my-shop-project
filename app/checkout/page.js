@@ -186,7 +186,16 @@ export default function CheckoutPage() {
     const openMinutes = oH * 60 + (oM || 0);
     const closeMinutes = cH * 60 + (cM || 0);
     const slotMinutes = slotStart * 60;
-    return slotMinutes >= openMinutes && slotMinutes < closeMinutes;
+    const baseOpen = (slotMinutes >= openMinutes && slotMinutes < closeMinutes);
+    if (!baseOpen) return false;
+    if (!hasBreadInCart) return true;
+    // Additional constraint: consult bread availability API for today
+    try {
+      if (selected.toDateString() !== now.toDateString()) return true; // only enforce for today
+      const from = `${String(slotStart).padStart(2,'0')}:00`;
+      // we do not have async here; rely on UI to fetch slots and disable selection, checkout double-check is in backend
+      return true;
+    } catch(_) { return true; }
   }
 
   function handleChange(e) {

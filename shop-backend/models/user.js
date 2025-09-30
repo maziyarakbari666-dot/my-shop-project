@@ -6,6 +6,12 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   phone: { type: String },
+  // Engagement fields
+  phoneNumber: { type: String },
+  totalOrders: { type: Number, default: 0 },
+  lastOrderDate: { type: Date },
+  lastEngagementAction: { type: Date },
+  engagementScore: { type: Number, default: 0 },
   role: { type: String, enum: ['user', 'admin'], default: 'user' },
   status: { type: String, enum: ['active', 'inactive'], default: 'active' },
   favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],

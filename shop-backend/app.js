@@ -26,11 +26,17 @@ const courierRoutes = require('./routes/courierRoutes');
 const Settings = require('./models/Settings');
 const paymentRoutes = require('./routes/paymentRoutes');
 const cartRoutes = require('./routes/cartRoutes');
+const chatbotRoutes = require('./routes/chatbotRoutes');
+const recommendationRoutes = require('./routes/recommendationRoutes');
+const { runInsights } = require('./services/insightEngine');
+const { startBreadAvailabilityScheduler } = require('./services/breadAvailabilityScheduler');
 const addressRoutes = require('./routes/addressRoutes');
+const breadRoutes = require('./routes/breadRoutes');
 const categoryController = require('./controllers/categoryController');
 const bnplRoutes = require('./routes/bnplRoutes');
 const { startScheduler: startBnplReminderScheduler } = require('./services/bnplReminder');
 const { scheduleDeletion } = require('./services/whatsapp');
+const { startScheduler: startEngagementScheduler } = require('./services/engagementScheduler');
 
 const app = express();
 const userController = require('./controllers/userController');
@@ -200,6 +206,17 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/bnpl', bnplRoutes);
 app.use('/api/users', require('./routes/users'));
 app.use('/api/cart', csrfProtection, cartRoutes);
+app.use('/api/bread', breadRoutes);
+// rate limit for chatbot (stricter)
+const chatbotLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: isProd ? 30 : 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res/*, next*/) => res.fail('درخواست بیش از حد برای چت‌بات.', 429)
+});
+app.use('/api/chatbot', chatbotLimiter, chatbotRoutes);
+app.use('/api/recommendations', recommendationRoutes);
 
 // simple scheduler (every 10 minutes) to delete expired WhatsApp messages
 if (!isTest) {
@@ -207,6 +224,10 @@ if (!isTest) {
     setInterval(() => {
       try { scheduleDeletion(); } catch(_){ }
     }, 10 * 60 * 1000);
+    // daily insights every 24h
+    setInterval(() => {
+      try { runInsights(); } catch(_) {}
+    }, 24 * 60 * 60 * 1000);
   } catch (_) {}
 }
 app.use('/api/addresses', addressRoutes);
@@ -248,6 +269,8 @@ try {
   const enableJobsDefault = isTest ? 'false' : 'true';
   if (String(process.env.ENABLE_JOBS || enableJobsDefault).toLowerCase() === 'true') {
     startBnplReminderScheduler();
+      startBreadAvailabilityScheduler();
+      startEngagementScheduler();
   }
 } catch (e) {
   console.error('[BNPL][REMINDER] Failed to start scheduler:', e.message);
