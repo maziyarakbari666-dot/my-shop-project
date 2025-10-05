@@ -103,17 +103,12 @@ exports.sendOtp = async (req, res, next) => {
       expiresAt
     });
     
-    // In development, return the OTP code and log it to console
+    // پاسخ بدون افشای کد در تولید
     const response = { message: 'کد یکبار مصرف ارسال شد' };
     if (process.env.NODE_ENV !== 'production') {
       response.debugCode = otpCode;
       console.log(`🔑 OTP Code for ${phone}: ${otpCode}`);
-    } else {
-      // Also log for development even if NODE_ENV is not set
-      console.log(`🔑 OTP Code for ${phone}: ${otpCode}`);
-      response.debugCode = otpCode;
     }
-    
     res.success(response);
   } catch (err) {
     next(err);
@@ -131,15 +126,17 @@ exports.verifyOtp = async (req, res, next) => {
     const otp = await Otp.findOne({ 
       phone, 
       code,
-      expiresAt: { $gt: new Date() }
+      expiresAt: { $gt: new Date() },
+      used: false
     });
     
     if (!otp) {
       return res.fail('کد نامعتبر یا منقضی شده است', 400);
     }
     
-    // Remove the used OTP
-    await Otp.deleteOne({ _id: otp._id });
+    // Mark as used to prevent replay
+    otp.used = true;
+    await otp.save();
     
     // Find or create user
     const email = `${phone}@otp.local`;

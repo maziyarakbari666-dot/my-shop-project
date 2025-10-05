@@ -59,6 +59,7 @@ export default function ProductPage() {
     return demo ? normalizeProduct(demo) : null;
   });
   const [reviews, setReviews] = useState([]);
+  const [reco, setReco] = useState([]);
   const [reviewText, setReviewText] = useState("");
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const touchStartX = useRef(0);
@@ -79,6 +80,9 @@ export default function ProductPage() {
     }).catch(()=>{});
     fetch(`${BASE_API}/api/products/comments?productId=${params.id}`).then(r=>r.json()).then(d=>{
       if (d?.reviews) setReviews(d.reviews);
+    }).catch(()=>{});
+    fetch(`${BASE_API}/api/recommendations?productId=${params.id}&limit=8`).then(r=>r.json()).then(d=>{
+      if (Array.isArray(d?.recommendations)) setReco(d.recommendations.map(normalizeProduct));
     }).catch(()=>{});
   }, [params.id]);
 
@@ -272,6 +276,21 @@ export default function ProductPage() {
         </form>
       </div>
 
+      {reco.length > 0 && (
+        <div className="reco">
+          <h3 className="reco-title">محصولات پیشنهادی</h3>
+          <div className="reco-grid">
+            {reco.map((p)=> (
+              <a key={p._id || p.id} href={`/product/${p._id || p.id}`} className="reco-card">
+                <img src={p.image} alt={p.name} />
+                <div className="reco-name">{p.name}</div>
+                <div className="reco-price">{Number(p.price||0).toLocaleString()} تومان</div>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
+
       <style>{`
         .prod-root {
           font-family: Vazirmatn,sans-serif;
@@ -367,6 +386,13 @@ export default function ProductPage() {
           color: var(--primary);
           text-align: center;
         }
+        .reco { margin-top: 22px; }
+        .reco-title { font-weight:900; font-size:20px; margin-bottom:12px; color: var(--primary); text-align:center; }
+        .reco-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+        .reco-card { background:#fff; border:1px solid #eee; border-radius:12px; padding:10px; text-decoration:none; color:inherit; display:flex; flex-direction:column; align-items:center; }
+        .reco-card img { width:140px; height:140px; object-fit:cover; border-radius:10px; margin-bottom:8px; background:#fafafa; }
+        .reco-name { font-weight:800; color:#333; text-align:center; }
+        .reco-price { color: var(--accent); font-weight:800; }
         .prod-comment {
           background: #f8fafc;
           border-radius: 10px;

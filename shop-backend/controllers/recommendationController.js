@@ -1,10 +1,30 @@
 const Order = require('../models/Order');
 const Product = require('../models/Product');
+const mongoose = require('mongoose');
 
 exports.getRecommendations = async (req, res, next) => {
   try {
-    const { userId, limit = 10 } = req.query;
+    const { userId, productId, limit = 10 } = req.query;
     const max = Math.min(Number(limit) || 10, 50);
+    // Item-based: related to a given productId
+    if (productId && mongoose.Types.ObjectId.isValid(String(productId))) {
+      const others = await Order.find({ 'products.product': productId }).lean();
+      const scores = new Map();
+      for (const o of others) {
+        let contains = false;
+        for (const line of o.products || []) if (String(line.product) === String(productId)) { contains = true; break; }
+        if (!contains) continue;
+        for (const line of o.products || []) {
+          const pid = String(line.product);
+          if (pid === String(productId)) continue;
+          scores.set(pid, (scores.get(pid) || 0) + Number(line.quantity || 1));
+        }
+      }
+      const sorted = Array.from(scores.entries()).sort((a,b)=>b[1]-a[1]).slice(0, max);
+      const ids = sorted.map(([id]) => id);
+      const prods = await Product.find({ _id: { $in: ids }, active: true }).lean();
+      return res.success({ recommendations: prods });
+    }
     // If user provided: collaborative filtering (very simple)
     if (userId) {
       const userOrders = await Order.find({ user: userId }).lean();

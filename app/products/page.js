@@ -1,6 +1,8 @@
 'use client';
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 import Link from "next/link";
 
 const products = [
@@ -36,10 +38,41 @@ const products = [
 export default function ProductsPage() {
   const [search, setSearch] = useState("");
   const [catFilter, setCatFilter] = useState("");
-  const categories = Array.from(new Set(products.map(p => p.category)));
+  const [serverProducts, setServerProducts] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const filteredProducts = products.filter(product =>
-    product.name.includes(search) &&
+  const categories = useMemo(()=> Array.from(new Set(products.map(p => p.category))), []);
+
+  useEffect(()=>{
+    const q = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '');
+    const initialQ = q.get('q') || '';
+    setSearch(initialQ);
+  }, []);
+
+  useEffect(()=>{
+    const controller = new AbortController();
+    async function load() {
+      try {
+        setLoading(true); setError("");
+        const params = new URLSearchParams();
+        if (search) params.set('q', search);
+        if (catFilter) params.set('category', catFilter);
+        params.set('page', '1'); params.set('pageSize', '48');
+        const r = await fetch(`${API}/api/products/search?${params.toString()}`, { signal: controller.signal, cache: 'no-store' });
+        const d = await r.json();
+        if (r.ok && d?.products) setServerProducts(d.products);
+        else setError(d?.error || 'خطا در دریافت محصولات');
+      } catch(e) {
+        if (e.name !== 'AbortError') setError('خطا در ارتباط با سرور');
+      } finally { setLoading(false); }
+    }
+    load();
+    return ()=> controller.abort();
+  }, [search, catFilter]);
+
+  const filteredProducts = serverProducts.length ? serverProducts : products.filter(product =>
+    (search ? product.name.includes(search) : true) &&
     (catFilter === "" || product.category === catFilter)
   );
 
@@ -66,6 +99,8 @@ export default function ProductsPage() {
         </select>
         <div className="prodlist-count">تعداد محصولات: <b>{filteredProducts.length}</b></div>
       </div>
+      {loading && <div style={{textAlign:'center', color:'#888'}}>در حال بارگذاری...</div>}
+      {error && <div style={{textAlign:'center', color:'#c0392b'}}>{error}</div>}
       <div className="prodlist-grid">
         {filteredProducts.map(product => (
           <Link

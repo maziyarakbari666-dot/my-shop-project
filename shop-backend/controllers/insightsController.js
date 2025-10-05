@@ -22,3 +22,5 @@ exports.getInsights = async (req, res, next) => {
 };
 
 
+
+

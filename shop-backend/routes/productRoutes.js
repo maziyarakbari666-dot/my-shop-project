@@ -3,12 +3,18 @@ const router = express.Router();
 const productController = require('../controllers/productController');
 const { isAuthenticated, isAdmin } = require('../middleware/auth');
 const upload = require('../middleware/upload');
+const { validate, productSchemas } = require('../middleware/validation');
 
-router.post('/', isAuthenticated, isAdmin, upload.single('image'), productController.addProduct);
+router.post('/', isAuthenticated, isAdmin, upload.single('image'), validate(productSchemas.add), productController.addProduct);
 router.put('/:id', isAuthenticated, isAdmin, upload.single('image'), productController.updateProduct);
 router.delete('/:id', isAuthenticated, isAdmin, productController.deleteProduct);
-router.get('/', productController.getAllProducts);
+router.get('/', validate(productSchemas.list), productController.getAllProducts);
+// search endpoints should come before dynamic :id
+router.get('/search', productController.searchProducts);
+router.get('/search/suggest', productController.suggestProducts);
 router.get('/:id', productController.getProduct);
+router.post('/watch', isAuthenticated, productController.watchProduct);
+router.post('/unwatch', isAuthenticated, productController.unwatchProduct);
 
 // comments
 router.post('/comments', productController.addComment);

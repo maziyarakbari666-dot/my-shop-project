@@ -24,6 +24,10 @@ export default function Header() {
   const [auth, setAuth] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+  const [query, setQuery] = useState('');
+  const [suggestions, setSuggestions] = useState([]);
+  const [openSuggest, setOpenSuggest] = useState(false);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
 
   const checkAuth = useCallback(async () => {
     let ok = false;
@@ -49,6 +53,47 @@ export default function Header() {
   }, [apiBase]);
 
   useEffect(()=>{ checkAuth(); }, [checkAuth]);
+
+  useEffect(()=>{
+    if (typeof document === 'undefined') return;
+    const close = (e) => {
+      const el = document.getElementById('search-box');
+      if (el && !el.contains(e.target)) setOpenSuggest(false);
+    };
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, []);
+
+  const fetchSuggest = useCallback(async (val) => {
+    try {
+      if (!val || val.trim().length === 0) { setSuggestions([]); return; }
+      setLoadingSuggest(true);
+      const r = await fetch(`${apiBase}/api/products/search/suggest?q=${encodeURIComponent(val)}&limit=8`, { cache: 'no-store' });
+      const d = await r.json();
+      setSuggestions(Array.isArray(d?.suggestions) ? d.suggestions : []);
+    } catch(_) {
+      setSuggestions([]);
+    } finally {
+      setLoadingSuggest(false);
+    }
+  }, [apiBase]);
+
+  const onChangeQuery = useCallback((e) => {
+    const val = e.target.value;
+    setQuery(val);
+    setOpenSuggest(true);
+    // debounce locally
+    if (Header._t) clearTimeout(Header._t);
+    Header._t = setTimeout(()=> fetchSuggest(val), 220);
+  }, [fetchSuggest]);
+
+  const onSubmitSearch = useCallback((e) => {
+    e.preventDefault();
+    if (typeof window !== 'undefined') {
+      const q = encodeURIComponent(query || '');
+      window.location.href = `/products?q=${q}`;
+    }
+  }, [query]);
 
   useEffect(()=>{
     const onStorage = (e) => {
@@ -94,6 +139,37 @@ export default function Header() {
           🐻 بیگ‌بیر
         </Link>
         <nav className="header-nav">
+          <form className="search-form" onSubmit={onSubmitSearch} id="search-box">
+            <input
+              type="search"
+              className="search-input"
+              placeholder="جستجو..."
+              value={query}
+              onChange={onChangeQuery}
+              onFocus={()=> setOpenSuggest(true)}
+              aria-label="جستجوی محصول"
+            />
+            <button type="submit" className="search-btn">جستجو</button>
+            {openSuggest && (query?.length > 0) && (
+              <div className="suggest-panel">
+                {loadingSuggest && <div className="suggest-item muted">در حال جستجو...</div>}
+                {!loadingSuggest && suggestions.length === 0 && (
+                  <div className="suggest-item muted">نتیجه‌ای یافت نشد</div>
+                )}
+                {suggestions.map((s)=> (
+                  <Link key={s._id || s.id}
+                        href={`/product/${s._id || s.id}`}
+                        className="suggest-item"
+                        onClick={()=> setOpenSuggest(false)}>
+                    <span className="s-name">{s.name}</span>
+                    {typeof s.price !== 'undefined' && (
+                      <span className="s-price">{Number(s.price||0).toLocaleString()} تومان</span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
+          </form>
           <Link href="/" className="nav-link">صفحه اصلی</Link>
           <Link href="/account" className="nav-link">حساب کاربری</Link>
           {!auth && <Link href="/login" className="nav-link">ورود</Link>}
@@ -138,6 +214,15 @@ export default function Header() {
           justify-content: space-between;
           padding: 13px 14px;
         }
+        .search-form { position: relative; display:flex; align-items:center; gap:6px; }
+        .search-input { padding:7px 10px; border:1px solid #eee; border-radius:8px; min-width:220px; font-family:inherit; }
+        .search-btn { background: var(--primary); color:#fff; border:none; border-radius:8px; padding:7px 12px; font-weight:800; cursor:pointer; }
+        .suggest-panel { position:absolute; top: calc(100% + 8px); right:0; background:#fff; box-shadow:0 10px 30px rgba(0,0,0,0.08); border-radius:12px; width: 360px; max-height: 420px; overflow:auto; z-index: 1001; }
+        .suggest-item { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; color:#333; text-decoration:none; border-bottom:1px solid #f5f5f5; }
+        .suggest-item:hover { background:#fafafa; }
+        .suggest-item.muted { color:#888; cursor:default; }
+        .s-name { font-weight:800; }
+        .s-price { color: var(--accent); font-weight:800; font-size: 0.95rem; }
         .logo {
           font-size: 1.5rem;
           color: var(--primary);

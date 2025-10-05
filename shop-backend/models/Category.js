@@ -5,4 +5,7 @@ const categorySchema = new mongoose.Schema({
   description: { type: String },
 }, { timestamps: true });
 
+categorySchema.index({ name: 1 }, { unique: true });
+categorySchema.index({ createdAt: -1 });
+
 module.exports = mongoose.model('Category', categorySchema);

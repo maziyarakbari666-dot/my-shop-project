@@ -10,3 +10,5 @@ const insightSchema = new mongoose.Schema({
 module.exports = mongoose.model('Insight', insightSchema);
 
 
+
+

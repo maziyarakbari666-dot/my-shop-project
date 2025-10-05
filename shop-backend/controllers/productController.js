@@ -1,5 +1,6 @@
 const Product = require('../models/Product');
 const { invalidateProductCache } = require('../middleware/cache');
+const ProductWatch = require('../models/ProductWatch');
 
 // افزودن محصول جدید
 exports.addProduct = async (req, res, next) => {
@@ -78,6 +79,30 @@ exports.updateProduct = async (req, res, next) => {
     if (!product) {
       return res.status(404).json({ error: 'محصول یافت نشد!' });
     }
+    // notify watchers: restock or discount
+    try {
+      const watchers = [];
+      if (typeof updates.stock !== 'undefined' && Number(updates.stock) > 0) {
+        const w = await ProductWatch.find({ product: product._id, type: 'restock', fulfilled: false }).populate('user','phone phoneNumber name');
+        watchers.push(...w.map(x => ({ w: x, reason: 'restock' })));
+      }
+      if (typeof updates.discountPercent !== 'undefined' && Number(updates.discountPercent) > 0) {
+        const w = await ProductWatch.find({ product: product._id, type: 'discount', fulfilled: false }).populate('user','phone phoneNumber name');
+        watchers.push(...w.map(x => ({ w: x, reason: 'discount' })));
+      }
+      if (watchers.length) {
+        const { sendSms } = require('../services/sms');
+        for (const { w, reason } of watchers) {
+          const to = w.user?.phoneNumber || w.user?.phone;
+          const name = w.user?.name || '';
+          const msg = reason === 'restock'
+            ? `سلام ${name||'دوست عزیز'}! محصول ${product.name} دوباره موجود شد.`
+            : `سلام ${name||'دوست عزیز'}! روی ${product.name} تخفیف فعال شد.`;
+          try { if (to) await sendSms(to, msg); } catch (_) {}
+          w.fulfilled = true; await w.save();
+        }
+      }
+    } catch (_) {}
     res.success({ product });
   } catch (err) {
     next(err);
@@ -97,16 +122,128 @@ exports.deleteProduct = async (req, res, next) => {
   }
 };
 
-// جستجوی محصولات با کوئری (search)
+// جستجوی محصولات با فیلتر پیشرفته و سورت
 exports.searchProducts = async (req, res, next) => {
   try {
-    const { q } = req.query;
-    const filter = q ? { name: new RegExp(q, 'i') } : {};
-    const products = await Product.find(filter).select('name price image stock category').populate('category', 'name').lean();
-    res.success({ products });
+    const { q, category, minPrice, maxPrice, sort = 'newest', page = 1, pageSize = 20 } = req.query;
+    const filter = { active: true };
+    if (q) {
+      // استفاده از text index در صورت موجود بودن؛ fallback به regex
+      filter.$or = [
+        { $text: { $search: String(q) } },
+        { name: new RegExp(String(q), 'i') }
+      ];
+    }
+    if (category) filter.category = category;
+    if (minPrice) filter.price = { ...(filter.price||{}), $gte: Number(minPrice) };
+    if (maxPrice) filter.price = { ...(filter.price||{}), $lte: Number(maxPrice) };
+
+    const skip = (Number(page) - 1) * Number(pageSize);
+
+    const sortMap = {
+      newest: { createdAt: -1 },
+      cheapest: { price: 1 },
+      expensive: { price: -1 },
+      popular: { 'reviews.length': -1 }
+    };
+    const sortObj = sortMap[sort] || sortMap.newest;
+
+    const [items, total] = await Promise.all([
+      Product.find(filter)
+        .select('name price image stock category discountPercent')
+        .populate('category', 'name')
+        .sort(sortObj)
+        .skip(skip)
+        .limit(Number(pageSize))
+        .lean(),
+      Product.countDocuments(filter)
+    ]);
+
+    res.success({ products: items, total, page: Number(page), pageSize: Number(pageSize) });
   } catch (err) {
     next(err);
   }
+};
+
+// Suggest با تحمل خطای بهتر + استفاده از text index در امتیازدهی
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  const al = a.length, bl = b.length;
+  if (al === 0) return bl; if (bl === 0) return al;
+  const dp = Array.from({ length: al + 1 }, () => new Array(bl + 1).fill(0));
+  for (let i = 0; i <= al; i++) dp[i][0] = i;
+  for (let j = 0; j <= bl; j++) dp[0][j] = j;
+  for (let i = 1; i <= al; i++) {
+    for (let j = 1; j <= bl; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(
+        dp[i - 1][j] + 1,
+        dp[i][j - 1] + 1,
+        dp[i - 1][j - 1] + cost
+      );
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        dp[i][j] = Math.min(dp[i][j], dp[i - 2][j - 2] + cost);
+      }
+    }
+  }
+  return dp[al][bl];
+}
+
+exports.suggestProducts = async (req, res, next) => {
+  try {
+    const { q, limit = 8 } = req.query;
+    const max = Math.min(Number(limit) || 8, 20);
+    if (!q || String(q).trim().length < 1) return res.success({ suggestions: [] });
+    const needle = String(q).toLowerCase();
+    // ابتدا کاندیدها را از text search بگیریم اگر موجود، سپس fallback عمومی
+    let candidates = [];
+    try {
+      candidates = await Product.find({ $text: { $search: needle } })
+        .select('name image price')
+        .limit(200)
+        .lean();
+    } catch (_) {
+      candidates = await Product.find({}).select('name image price').limit(500).lean();
+    }
+    const scored = [];
+    for (const c of candidates) {
+      const name = String(c.name || '').toLowerCase();
+      const d = levenshtein(needle, name.slice(0, Math.min(name.length, needle.length + 3)));
+      let score = 100 - d * 10;
+      if (name.includes(needle)) score += 30;
+      if (name.startsWith(needle)) score += 20;
+      // boost بر اساس تخفیف یا جدید بودن
+      if (typeof c.discountPercent === 'number' && c.discountPercent > 0) score += 5;
+      scored.push({ item: c, score });
+    }
+    scored.sort((a, b) => b.score - a.score);
+    const suggestions = scored.slice(0, max).map(s => s.item);
+    res.success({ suggestions });
+  } catch (err) { next(err); }
+};
+
+// Watch/unwatch endpoints
+exports.watchProduct = async (req, res, next) => {
+  try {
+    const { productId, type } = req.body; // 'restock' | 'discount'
+    if (!req.user?.id) return res.fail('ابتدا وارد شوید.', 401);
+    if (!['restock','discount'].includes(String(type))) return res.fail('نوع نامعتبر است.', 422);
+    await ProductWatch.findOneAndUpdate(
+      { user: req.user.id, product: productId, type },
+      { $setOnInsert: { fulfilled: false } },
+      { upsert: true, new: true }
+    );
+    res.success({ ok: true });
+  } catch (err) { next(err); }
+};
+
+exports.unwatchProduct = async (req, res, next) => {
+  try {
+    const { productId, type } = req.body;
+    if (!req.user?.id) return res.fail('ابتدا وارد شوید.', 401);
+    await ProductWatch.deleteOne({ user: req.user.id, product: productId, type });
+    res.success({ ok: true });
+  } catch (err) { next(err); }
 };
 
 // Comments endpoints

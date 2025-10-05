@@ -47,3 +47,7 @@ orderSchema.pre('save', async function(next) {
 });
 
 module.exports = mongoose.model('Order', orderSchema);
+// Indexes
+orderSchema.index({ user: 1, createdAt: -1 });
+orderSchema.index({ orderNumber: 1 }, { unique: true });
+orderSchema.index({ status: 1, paymentMethod: 1, deliveryDate: -1 });

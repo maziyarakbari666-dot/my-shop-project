@@ -16,3 +16,6 @@ breadAvailabilitySchema.index({ fromTime: 1, toTime: 1 });
 module.exports = mongoose.model('BreadAvailability', breadAvailabilitySchema);
 
 
+
+
+

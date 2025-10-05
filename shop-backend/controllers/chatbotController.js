@@ -36,3 +36,5 @@ Return only the assistant message as plain text.`;
 exports.model = ChatLog;
 
 
+
+

@@ -8,6 +8,8 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const compression = require('compression');
 const morgan = require('morgan');
+const pino = require('pino');
+const pinoHttp = require('pino-http');
 const { sanitize } = require('express-mongo-sanitize');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 
@@ -76,8 +78,10 @@ app.use(helmet());
 // Content Security Policy (conservative; relaxed in dev for inline/eval)
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test';
-// HTTP request logging (dev: concise, prod: combined)
+// HTTP request logging (dev: concise, prod: combined) + structured logs
 app.use(morgan(isProd ? 'combined' : 'dev'));
+const logger = pino({ level: process.env.LOG_LEVEL || (isProd ? 'info' : 'debug') });
+app.use(pinoHttp({ logger }));
 // Trust proxy (for x-forwarded-* headers behind reverse proxies/load balancers)
 app.set('trust proxy', 1);
 // Enforce HTTPS in production (honors x-forwarded-proto thanks to trust proxy)
@@ -189,6 +193,28 @@ const otpLimiter = rateLimit({
 });
 // Apply global API limiter (skips /auth/me and /auth/send-otp per config above)
 app.use('/api', globalApiLimiter);
+// API docs (Swagger UI)
+try {
+  const swaggerUi = require('swagger-ui-express');
+  const swaggerJsdoc = require('swagger-jsdoc');
+  const swaggerSpec = swaggerJsdoc({
+    definition: {
+      openapi: '3.0.3',
+      info: {
+        title: 'Shop Backend API',
+        version: '1.0.0',
+      },
+      servers: [{ url: `http://localhost:${process.env.PORT || 5000}` }]
+    },
+    apis: [
+      __filename,
+      './routes/*.js',
+      './controllers/*.js'
+    ]
+  });
+  app.get('/api/openapi.json', (req, res) => res.json(swaggerSpec));
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+} catch (_) {}
 // Exempt GET /api/auth/me and POST /api/auth/send-otp from the general authLimiter
 app.get('/api/auth/me', isAuthenticated, userController.me);
 app.use('/api/auth/send-otp', otpLimiter);
@@ -233,7 +259,7 @@ if (!isTest) {
 app.use('/api/addresses', addressRoutes);
 
 // Public settings
-app.get('/api/settings', async (req, res) => {
+app.get('/api/settings', settingsCache, async (req, res) => {
   try {
     const s = await Settings.findOne().sort({ createdAt: -1 });
     if (!s) return res.success({ settings: {} });
@@ -253,7 +279,7 @@ app.get('/api/settings', async (req, res) => {
 
 // Category minimal endpoints
 app.post('/api/categories', isAuthenticated, isAdmin, categoryController.addCategory);
-app.get('/api/categories', categoryController.getCategories);
+app.get('/api/categories', categoryCache, categoryController.getCategories);
 
 // Static
 app.use('/uploads', express.static('uploads', { maxAge: '7d', etag: true }));
